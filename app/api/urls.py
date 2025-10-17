@@ -1,5 +1,5 @@
 from django.conf.urls import url, include
-
+from django.urls import path
 from app.api.presets import PresetViewSet
 from app.plugins.views import api_view_handler
 from .projects import ProjectViewSet
@@ -15,7 +15,7 @@ from .workers import CheckTask, GetTaskResult
 from .users import UsersList
 from .externalauth import ExternalTokenAuth
 from webodm import settings
-
+from .custom_views import ProjectCreateFromRemote
 router = routers.DefaultRouter()
 router.register(r'projects', ProjectViewSet)
 router.register(r'processingnodes', ProcessingNodeViewSet)
@@ -30,19 +30,14 @@ admin_router.register(r'admin/groups', AdminGroupViewSet, basename='admin-groups
 admin_router.register(r'admin/profiles', AdminProfileViewSet, basename='admin-groups')
 
 urlpatterns = [
+    path('projects/create_from_remote/', ProjectCreateFromRemote.as_view(), name='project-create-from-remote'),
     url(r'processingnodes/options/$', ProcessingNodeOptionsView.as_view()),
-
-    url(r'^', include(router.urls)),
-    url(r'^', include(tasks_router.urls)),
-    url(r'^', include(admin_router.urls)),
-
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<tile_type>orthophoto|dsm|dtm)/tiles\.json$', TileJson.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<tile_type>orthophoto|dsm|dtm)/bounds$', Bounds.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<tile_type>orthophoto|dsm|dtm)/metadata$', Metadata.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<tile_type>orthophoto|dsm|dtm)/tiles/(?P<z>[\d]+)/(?P<x>[\d]+)/(?P<y>[\d]+)\.?(?P<ext>png|jpg|webp)?$', Tiles.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<tile_type>orthophoto|dsm|dtm)/tiles/(?P<z>[\d]+)/(?P<x>[\d]+)/(?P<y>[\d]+)@(?P<scale>[\d]+)x\.?(?P<ext>png|jpg|webp)?$', Tiles.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/(?P<asset_type>orthophoto|dsm|dtm|georeferenced_model)/export$', Export.as_view()),
-
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/download/(?P<asset>.+)$', TaskDownloads.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/textured_model/$', TaskSafeTexturedModel.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/assets/(?P<unsafe_asset_path>.+)$', TaskAssets.as_view()),
@@ -51,17 +46,17 @@ urlpatterns = [
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/backup$', TaskBackup.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/images/thumbnail/(?P<image_filename>.+)$', Thumbnail.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/images/download/(?P<image_filename>.+)$', ImageDownload.as_view()),
-
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/3d/scene$', Scene.as_view()),
     url(r'projects/(?P<project_pk>[^/.]+)/tasks/(?P<pk>[^/.]+)/3d/cameraview$', CameraView.as_view()),
-
     url(r'workers/check/(?P<celery_task_id>.+)', CheckTask.as_view()),
     url(r'workers/get/(?P<celery_task_id>.+)', GetTaskResult.as_view()),
-
     url(r'^auth/', include('rest_framework.urls')),
     url(r'^token-auth/', obtain_jwt_token),
-
     url(r'^plugins/(?P<plugin_name>[^/.]+)/(.*)$', api_view_handler),
+    # Generic router includes (must come LAST as they have catch-all patterns)
+    url(r'^', include(router.urls)),
+    url(r'^', include(tasks_router.urls)),
+    url(r'^', include(admin_router.urls)),
 ]
 
 if settings.ENABLE_USERS_API:

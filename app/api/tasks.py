@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 from wsgiref.util import FileWrapper
-
+import tempfile
 import mimetypes
 import rasterio
 from rasterio.vrt import WarpedVRT
@@ -10,7 +10,6 @@ from rasterio.enums import ColorInterp
 from PIL import Image
 import io
 import numpy as np
-
 from shutil import copyfileobj, move
 from django.core.exceptions import ObjectDoesNotExist, SuspiciousFileOperation, ValidationError
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -26,7 +25,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Q
-
 from app import models, pending_actions
 from nodeodm import status_codes
 from nodeodm.models import ProcessingNode
@@ -38,6 +36,70 @@ from django.utils.translation import gettext_lazy as _
 from .fields import PolygonGeometryField
 from app.geoutils import geom_transform_wkt_bbox
 from webodm import settings
+from minio import Minio
+from minio.error import S3Error
+import requests
+import tempfile
+import shutil
+from urllib.parse import urljoin
+from celery.utils.log import get_task_logger
+from webodm.celery import app
+from webodm import settings
+from .models import Task
+from .processing import task_process
+from urllib.parse import urlparse
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
+
+@app.task(bind=True, name="app.tasks.task_download_and_process")
+def task_download_and_process(self, project_id, host, files, options):
+    temp_dir = tempfile.mkdtemp(prefix='remote_dl_', dir=os.path.join(settings.MEDIA_ROOT, settings.TMP_IMAGES_DIR))
+    local_image_paths = []
+
+    # 1. Initialize MinIO client with credentials from settings
+    parsed_host = urlparse(host)
+    minio_client = Minio(
+        endpoint=parsed_host.netloc,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=parsed_host.scheme == 'https'
+    )
+
+    logger.info(f"Starting download of {len(files)} files from MinIO host {host}")
+    self.update_state(state='PROGRESS', meta={'status': f'Downloading {len(files)} images...'})
+
+    try:
+        for file_path in files:
+            # Assumes the minio_path is "bucket-name/path/to/file.JPG"
+            bucket_name, object_name = file_path.split('/', 1)
+            local_filename = os.path.basename(object_name)
+            local_path = os.path.join(temp_dir, local_filename)
+
+            # 2. Download the file using the MinIO client
+            try:
+                minio_client.fget_object(bucket_name, object_name, local_path)
+                local_image_paths.append(local_path)
+                logger.info(f"Downloaded s3://{bucket_name}/{object_name}")
+            except S3Error as e:
+                logger.error(f"Failed to download {file_path}: {e}")
+                raise
+
+        if not local_image_paths:
+            raise ValueError("No images were successfully downloaded.")
+
+        task = Task.objects.create(
+            project_id=project_id,
+            name=f"Task from MinIO ({len(local_image_paths)} images)",
+        )
+
+        task_process.delay(task_id=task.id, images_path=local_image_paths, options=options)
+
+    except Exception as e:
+        shutil.rmtree(temp_dir)
+        logger.error(f"Task failed: {e}")
+        self.update_state(state='FAILURE', meta={'exc_type': type(e).__name__, 'exc_message': str(e)})
+        raise
 
 def flatten_files(request_files):
     # MultiValueDict in, flat array of files out

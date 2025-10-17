@@ -17,9 +17,13 @@ services:
   webapp:
     image: opendronemap/webodm_webapp
     container_name: webapp
-    entrypoint: /bin/bash -c "service cron start && chmod +x /webodm/*.sh && /bin/bash -c \"/webodm/wait-for-postgres.sh db /webodm/wait-for-it.sh -t 0 broker:6379 -- /webodm/start.sh\""
+    entrypoint: /bin/bash -c "pip install -q minio && service cron start && chmod +x /webodm/*.sh && /bin/bash -c \"/webodm/wait-for-postgres.sh db /webodm/wait-for-it.sh -t 0 broker:6379 -- /webodm/start.sh\""
     volumes:
       - ${WO_MEDIA_DIR}:/webodm/app/media:z
+      - ./app/api/custom_views.py:/webodm/app/api/custom_views.py:ro
+      - ./app/api/serializers.py:/webodm/app/api/serializers.py:ro
+      - ./app/api/urls.py:/webodm/app/api/urls.py:ro
+      - ./app/api/remote_tasks.py:/webodm/app/api/remote_tasks.py:ro
     ports:
       - "${WO_PORT}:8000"
     depends_on:
@@ -45,9 +49,13 @@ services:
   worker:
     image: opendronemap/webodm_webapp
     container_name: worker
-    entrypoint: /bin/bash -c "/webodm/wait-for-postgres.sh db /webodm/wait-for-it.sh -t 0 broker:6379 -- /webodm/wait-for-it.sh -t 0 webapp:8000 -- /webodm/worker.sh start"
+    entrypoint: /bin/bash -c "pip install -q minio && /webodm/wait-for-postgres.sh db /webodm/wait-for-it.sh -t 0 broker:6379 -- /webodm/wait-for-it.sh -t 0 webapp:8000 -- /webodm/worker.sh start"
     volumes:
       - ${WO_MEDIA_DIR}:/webodm/app/media:z
+      - ./app/api/custom_views.py:/webodm/app/api/custom_views.py:ro
+      - ./app/api/serializers.py:/webodm/app/api/serializers.py:ro
+      - ./app/api/urls.py:/webodm/app/api/urls.py:ro
+      - ./app/api/remote_tasks.py:/webodm/app/api/remote_tasks.py:ro
     depends_on:
       - db
       - broker

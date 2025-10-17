@@ -57,6 +57,9 @@ environment_check(){
 start(){
 	action=$1
 
+	echo "Installing/updating Python dependencies..."
+	pip install -q -r requirements.txt
+
 	echo "Starting worker using broker at $WO_BROKER"
 	celery -A worker worker --autoscale $WEB_CONCURRENCY,2 --max-tasks-per-child 1000 --loglevel=warn > /dev/null
 }
